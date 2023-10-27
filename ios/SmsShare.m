@@ -4,6 +4,7 @@
 
 @implementation SmsShare
 
+@synthesize shareResolve;
 
 - (void)shareSingle:(NSDictionary *)options
     reject:(RCTPromiseRejectBlock)reject
@@ -61,7 +62,7 @@
             }
         }
 
-
+        self.shareResolve = resolve;
         dispatch_async(dispatch_get_main_queue(), ^{
             UIViewController *ctrl = RCTPresentedViewController();
             [ctrl presentViewController:mc animated:YES completion:NULL];
@@ -75,6 +76,14 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *ctrl = RCTPresentedViewController();
         [ctrl dismissViewControllerAnimated:YES completion:NULL];
+
+        if (self.shareResolve) {
+            self.shareResolve(@{
+                @"success": @(MessageComposeResultSent == result),
+                @"message": @""
+            });
+            self.shareResolve = nil;
+        }
     });
 }
 
