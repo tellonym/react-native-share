@@ -12,5 +12,7 @@
 #import <MessageUI/MessageUI.h>
 @interface SmsShare : NSObject <MFMessageComposeViewControllerDelegate>
 
+@property (nonatomic, copy) RCTPromiseResolveBlock shareResolve;
+
 - (void) shareSingle:(NSDictionary *)options reject:(RCTPromiseRejectBlock)reject resolve:(RCTPromiseResolveBlock)resolve;
 @end
