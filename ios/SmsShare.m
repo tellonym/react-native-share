@@ -66,7 +66,6 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             UIViewController *ctrl = RCTPresentedViewController();
             [ctrl presentViewController:mc animated:YES completion:NULL];
-            resolve(@[@true, @""]);
         });
     }
 }
