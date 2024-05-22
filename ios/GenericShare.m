@@ -46,8 +46,40 @@
 
 
         UIViewController *ctrl = RCTPresentedViewController();
-        [ctrl presentViewController:composeController animated:YES completion:Nil];
-        resolve(@[@true, @""]);
+        __weak SLComposeViewController* weakShareController = composeController;
+        composeController.completionHandler = ^(SLComposeViewControllerResult result) {
+            
+            // always dismiss since this may be called from cancelled shares
+            // but the share menu would remain open, and our callback would fire again on close
+            if(weakShareController){
+                // closing activity view controller
+                [weakShareController dismissViewControllerAnimated:true completion:nil];
+            } else {
+                [ctrl dismissViewControllerAnimated:true completion:nil];
+            }
+
+            
+            if (result == SLComposeViewControllerResultCancelled) {
+                NSString *errorMessage = @"cancel share";
+                NSDictionary *userInfo = @{NSLocalizedFailureReasonErrorKey: NSLocalizedString(errorMessage, nil)};
+                NSError *error = [NSError errorWithDomain:@"com.rnshare" code:1 userInfo:userInfo];
+                reject(@"error",@"cancel share",error);
+            } else {
+                resolve(@{
+                    @"success": @(true),
+                    @"message": @"share success"
+                });
+            }
+            
+            // clear the completion handler to prevent cycles
+            if(weakShareController){
+                weakShareController.completionHandler = nil;
+            }
+        };
+        composeController.modalPresentationStyle = UIModalPresentationFullScreen;
+        UINavigationController *nav = [[UINavigationController alloc]initWithRootViewController:composeController];
+        nav.navigationBarHidden = true;
+        [ctrl presentViewController:nav animated:YES completion:nil];
       } else {
         NSString *errorMessage = @"Not installed";
         NSDictionary *userInfo = @{NSLocalizedFailureReasonErrorKey: NSLocalizedString(errorMessage, nil)};
