@@ -47,8 +47,7 @@
 
         UIViewController *ctrl = RCTPresentedViewController();
         __weak SLComposeViewController* weakShareController = composeController;
-        composeController.completionHandler = ^(SLComposeViewControllerResult result) {
-            
+        composeController.completionHandler = ^(SLComposeViewControllerResult result) { 
             // always dismiss since this may be called from cancelled shares
             // but the share menu would remain open, and our callback would fire again on close
             if(weakShareController){
@@ -58,7 +57,6 @@
                 [ctrl dismissViewControllerAnimated:true completion:nil];
             }
 
-            
             if (result == SLComposeViewControllerResultCancelled) {
                 NSString *errorMessage = @"cancel share";
                 NSDictionary *userInfo = @{NSLocalizedFailureReasonErrorKey: NSLocalizedString(errorMessage, nil)};
@@ -70,7 +68,7 @@
                     @"message": @"share success"
                 });
             }
-            
+
             // clear the completion handler to prevent cycles
             if(weakShareController){
                 weakShareController.completionHandler = nil;
