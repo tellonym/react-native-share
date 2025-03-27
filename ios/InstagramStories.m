@@ -8,22 +8,29 @@
 
 // import RCTLog
 #import <React/RCTLog.h>
+#import <Photos/Photos.h>
 
 #import "InstagramStories.h"
 
 @implementation InstagramStories
 RCT_EXPORT_MODULE();
 
+- (void)openInstagramWithItems:(NSDictionary *)items urlScheme:(NSURL *)urlScheme resolve:(RCTPromiseResolveBlock)resolve {
+    // Putting dictionary of options inside an array
+    NSArray *pasteboardItems = @[items];
+    NSDictionary *pasteboardOptions = @{UIPasteboardOptionExpirationDate : [[NSDate date] dateByAddingTimeInterval:60 * 5]};
+
+    [[UIPasteboard generalPasteboard] setItems:pasteboardItems options:pasteboardOptions];
+    [[UIApplication sharedApplication] openURL:urlScheme options:@{} completionHandler:nil];
+
+    resolve(@[@true, @""]);
+}
+
 - (void)shareSingle:(NSDictionary *)options
     reject:(RCTPromiseRejectBlock)reject
     resolve:(RCTPromiseResolveBlock)resolve {
-    
+
     NSURL *urlScheme = [NSURL URLWithString:[NSString stringWithFormat:@"instagram-stories://share?source_application=%@", options[@"appId"]]];
-    if (![[UIApplication sharedApplication] canOpenURL:urlScheme]) {
-        NSError* error = [self fallbackInstagram];
-        reject(@"cannot open URL",@"cannot open URL",error);
-        return;
-    }
 
     // Create dictionary of assets and attribution
     NSMutableDictionary *items = [NSMutableDictionary dictionary];
@@ -38,12 +45,6 @@ RCT_EXPORT_MODULE();
         NSURL *stickerImageURL = [RCTConvert NSURL:options[@"stickerImage"]];
         UIImage *image = [UIImage imageWithData: [NSData dataWithContentsOfURL: stickerImageURL]];
         [items setObject: UIImagePNGRepresentation(image) forKey: @"com.instagram.sharedSticker.stickerImage"];
-    }
-
-    if(![options[@"backgroundVideo"] isEqual:[NSNull null]] && options[@"backgroundVideo"] != nil) {
-        NSURL *backgroundVideoURL = [RCTConvert NSURL:options[@"backgroundVideo"]];
-        NSData *video = [NSData dataWithContentsOfURL:backgroundVideoURL];
-        [items setObject: video forKey: @"com.instagram.sharedSticker.backgroundVideo"];
     }
 
     if(![options[@"attributionURL"] isEqual:[NSNull null]] && options[@"attributionURL"] != nil) {
@@ -67,24 +68,86 @@ RCT_EXPORT_MODULE();
     }
     [items setObject: backgroundBottomColor forKey: @"com.instagram.sharedSticker.backgroundBottomColor"];
 
-    // Putting dictionary of options inside an array
-    NSArray *pasteboardItems = @[items];
+    if(![options[@"linkUrl"] isEqual:[NSNull null]] && options[@"linkUrl"] != nil) {
+        NSString *linkURL = [RCTConvert NSString:options[@"linkUrl"]];
+        [items setObject: linkURL forKey: @"com.instagram.sharedSticker.linkURL"];
+    }
 
-    // Prepare options to instagram
-    NSDictionary *pasteboardOptions = @{UIPasteboardOptionExpirationDate : [[NSDate date] dateByAddingTimeInterval:60 * 5]};
+    if(![options[@"linkText"] isEqual:[NSNull null]] && options[@"linkText"] != nil) {
+        NSString *linkText = [RCTConvert NSString:options[@"linkText"]];
+        [items setObject: linkText forKey: @"com.instagram.sharedSticker.linkText"];
+    }
 
-    // This call is iOS 10+, can use 'setItems' depending on what versions you support
-    [[UIPasteboard generalPasteboard] setItems:pasteboardItems options:pasteboardOptions];
-    [[UIApplication sharedApplication] openURL:urlScheme options:@{} completionHandler:nil];
+    if(![options[@"backgroundVideo"] isEqual:[NSNull null]] && options[@"backgroundVideo"] != nil) {
+        NSURL *backgroundVideoURL = [RCTConvert NSURL:options[@"backgroundVideo"]];
 
-    resolve(@[@true, @""]);
+        if ([backgroundVideoURL.scheme isEqualToString:@"file"]) {
+            // Handle local file
+            NSData *videoData = [NSData dataWithContentsOfURL:backgroundVideoURL];
+            if (videoData) {
+                [items setObject:videoData forKey:@"com.instagram.sharedSticker.backgroundVideo"];
+                [self openInstagramWithItems:items urlScheme:urlScheme resolve:resolve];
+            } else {
+                NSLog(@"Failed to read local video file");
+                [self openInstagramWithItems:items urlScheme:urlScheme resolve:resolve];
+            }
+        } else {
+            NSString *urlString = backgroundVideoURL.absoluteString;
+            NSURLComponents *components = [[NSURLComponents alloc] initWithString:urlString];
+            NSString *assetId = nil;
+
+            // Get asset ID from URL
+            for (NSURLQueryItem *item in components.queryItems) {
+                if ([item.name isEqualToString:@"id"]) {
+                    assetId = item.value;
+                    break;
+                }
+            }
+
+            if (assetId) {
+                // Fetch the asset
+                PHFetchResult *fetchResult = [PHAsset fetchAssetsWithLocalIdentifiers:@[assetId] options:nil];
+                PHAsset *asset = fetchResult.firstObject;
+
+                if (asset) {
+                    PHVideoRequestOptions *options = [[PHVideoRequestOptions alloc] init];
+                    options.networkAccessAllowed = YES;
+                    options.deliveryMode = PHVideoRequestOptionsDeliveryModeHighQualityFormat;
+
+                    [[PHImageManager defaultManager] requestAVAssetForVideo:asset
+                                                                    options:options
+                                                            resultHandler:^(AVAsset * _Nullable avAsset, AVAudioMix * _Nullable audioMix, NSDictionary * _Nullable info) {
+                        if ([avAsset isKindOfClass:[AVURLAsset class]]) {
+                            AVURLAsset *urlAsset = (AVURLAsset *)avAsset;
+                            NSData *video = [NSData dataWithContentsOfURL:urlAsset.URL];
+
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                if (video) {
+                                    [items setObject:video forKey:@"com.instagram.sharedSticker.backgroundVideo"];
+                                    [self openInstagramWithItems:items urlScheme:urlScheme resolve:resolve];
+                                } else {
+                                    NSLog(@"Failed to convert video asset to NSData");
+                                    [self openInstagramWithItems:items urlScheme:urlScheme resolve:resolve];
+                                }
+                            });
+                        }
+                    }];
+                } else {
+                    NSLog(@"Could not find asset with ID: %@", assetId);
+                    [self openInstagramWithItems:items urlScheme:urlScheme resolve:resolve];
+                }
+            }
+        }
+    } else {
+        [self openInstagramWithItems:items urlScheme:urlScheme resolve:resolve];
+    }
 }
 
 - (NSError*)fallbackInstagram {
     // Cannot open instagram
     NSString *stringURL = @"https://itunes.apple.com/app/instagram/id389801252";
     NSURL *url = [NSURL URLWithString:stringURL];
-    [[UIApplication sharedApplication] openURL:url];
+    [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
 
     NSString *errorMessage = @"Not installed";
     NSDictionary *userInfo = @{NSLocalizedFailureReasonErrorKey: NSLocalizedString(errorMessage, nil)};
